@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>K線教學軟體 - 股市圖表判讀</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 K線教學軟體</h1>
+            <p>學習股市 K線判讀，直到成功率達 80%</p>
+        </header>
+
+        <!-- 主選單 -->
+        <div id="mainMenu" class="screen">
+            <h2>選擇你的學習路徑</h2>
+            <div class="button-group">
+                <button class="btn btn-primary" onclick="startLesson()">📖 開始教學</button>
+                <button class="btn btn-secondary" onclick="viewStats()">📈 查看進度</button>
+                <button class="btn btn-tertiary" onclick="resetProgress()">🔄 重置進度</button>
+            </div>
+        </div>
+
+        <!-- 教學模式 -->
+        <div id="lessonMode" class="screen hidden">
+            <button class="btn-back" onclick="goBack()">← 返回</button>
+            <div id="lessonContent"></div>
+            <button class="btn btn-primary" onclick="nextLesson()">下一課 →</button>
+        </div>
+
+        <!-- 測驗模式 -->
+        <div id="quizMode" class="screen hidden">
+            <div class="quiz-header">
+                <div>進度: <span id="quizProgress">0</span>%</div>
+                <div>成功率: <span id="successRate">0</span>%</div>
+            </div>
+
+            <button class="btn-back" onclick="goBack()">← 返回</button>
+
+            <div id="quizContainer">
+                <h2 id="quizTitle"></h2>
+
+                <!-- K線圖示區 -->
+                <div id="klineDisplay" class="kline-display"></div>
+
+                <!-- 問題描述 -->
+                <p id="quizQuestion"></p>
+
+                <!-- 選項 -->
+                <div id="optionsContainer" class="options-container"></div>
+
+                <!-- 反饋 -->
+                <div id="feedback" class="feedback hidden"></div>
+
+                <!-- 按鈕 -->
+                <div class="button-group">
+                    <button id="submitBtn" class="btn btn-primary" onclick="submitAnswer()">提交答案</button>
+                    <button id="nextBtn" class="btn btn-success hidden" onclick="nextQuiz()">下一題 →</button>
+                </div>
+            </div>
+
+            <!-- 完成訊息 -->
+            <div id="completeMessage" class="complete-message hidden">
+                <h2>🎉 恭喜！</h2>
+                <p>你的 K線判讀成功率已達 <span id="finalScore">0</span>%</p>
+                <p>你已準備好在實盤中應用這些知識！</p>
+                <button class="btn btn-primary" onclick="goBack()">返回主選單</button>
+            </div>
+        </div>
+
+        <!-- 統計頁面 -->
+        <div id="statsPage" class="screen hidden">
+            <button class="btn-back" onclick="goBack()">← 返回</button>
+            <h2>📊 學習統計</h2>
+            <div id="statsContent" class="stats-content"></div>
+        </div>
+    </div>
+
+    <footer>
+        <p>🎓 K線教學軟體 v1.0 | 持續學習，成就夢想</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
