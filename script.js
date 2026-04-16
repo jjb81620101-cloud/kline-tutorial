@@ -128,6 +128,17 @@ function calcMACD(data, fast = 12, slow = 26, sig = 9) {
     return { macd, signal, hist };
 }
 
+function calcOBV(data) {
+    let obv = 0;
+    return data.map((c, i) => {
+        if (i === 0) return obv;
+        const d = c.close - data[i - 1].close;
+        if (d > 0) obv += (c.vol || 0);
+        else if (d < 0) obv -= (c.vol || 0);
+        return obv;
+    });
+}
+
 // ── SVG K線圖繪製（含指標）───────────────────────────────
 function renderKlineChart(candles, container, totalH = 200, opts = {}) {
     const W = 400;
@@ -257,7 +268,50 @@ function renderKlineChart(candles, container, totalH = 200, opts = {}) {
             });
             drawPath(svg, macd.map((v, i) => v !== null ? [xOf(i), my(v)] : null), { stroke: '#00bcd4', 'stroke-width': '1.5' });
             drawPath(svg, signal.map((v, i) => v !== null ? [xOf(i), my(v)] : null), { stroke: '#ffd700', 'stroke-width': '1.5' });
+
+        } else if (subType === 'OBV') {
+            const obv = calcOBV(candles);
+            const maxO = Math.max(...obv), minO = Math.min(...obv);
+            const oSpan = maxO - minO || 1;
+            const oy = v => sY0 + sH - ((v - minO) / oSpan) * sH;
+            svg.appendChild(svgEl('line', { x1: pL, y1: sY0 + sH / 2, x2: W - pR, y2: sY0 + sH / 2, stroke: '#ffffff20', 'stroke-width': '1' }));
+            const lbl = svgEl('text', { x: pL + 3, y: sY0 + 10, fill: '#4caf50', 'font-size': '10', 'font-family': 'monospace' });
+            lbl.textContent = 'OBV'; svg.appendChild(lbl);
+            drawPath(svg, obv.map((v, i) => [xOf(i), oy(v)]), { stroke: '#4caf50', 'stroke-width': '1.5' });
         }
+    }
+
+    // 斐波那契回撤線
+    if (opts.fibonacci) {
+        const fibHigh = Math.max(...candles.map(c => c.high));
+        const fibLow  = Math.min(...candles.map(c => c.low));
+        const fibRange = fibHigh - fibLow;
+        const fibDefs = [
+            { level: 0,     color: '#ffffff55', label: '0%' },
+            { level: 0.236, color: '#ffd70077', label: '23.6%' },
+            { level: 0.382, color: '#ff980099', label: '38.2%' },
+            { level: 0.5,   color: '#ef535099', label: '50%' },
+            { level: 0.618, color: '#ff980099', label: '61.8%' },
+            { level: 0.786, color: '#ffd70077', label: '78.6%' },
+            { level: 1,     color: '#ffffff55', label: '100%' },
+        ];
+        fibDefs.forEach(({ level, color, label }) => {
+            const price = fibHigh - level * fibRange;
+            const y = yM(price);
+            svg.appendChild(svgEl('line', { x1: pL, y1: y, x2: W - pR, y2: y, stroke: color, 'stroke-width': '1', 'stroke-dasharray': '4,4' }));
+            const t = svgEl('text', { x: W - pR - 3, y: y - 2, fill: color, 'font-size': '8', 'font-family': 'monospace', 'text-anchor': 'end' });
+            t.textContent = label; svg.appendChild(t);
+        });
+    }
+
+    // 標記線（進場/止損/止盈）
+    if (opts.levels) {
+        opts.levels.forEach(({ price, label, color }) => {
+            const y = yM(price);
+            svg.appendChild(svgEl('line', { x1: pL, y1: y, x2: W - pR, y2: y, stroke: color, 'stroke-width': '1.5', 'stroke-dasharray': '5,3' }));
+            const t = svgEl('text', { x: pL + 5, y: y - 3, fill: color, 'font-size': '10', 'font-family': 'monospace' });
+            t.textContent = label; svg.appendChild(t);
+        });
     }
 
     container.innerHTML = '';
@@ -383,6 +437,109 @@ const _D = {
     quizMACD:    genCandles(700, 50, 100, 0.5, 2.0),
     quizVol1:    genCandles(800, 12, 100, 0.6, 1.5),  // 量增價漲
     quizVol2:    genCandles(801, 12, 100, 0.3, 2.0),  // 量縮
+    // ── 進階型態 ──────────────────────────────────────────
+    bullFlag: [
+        { open: 78, high: 86, low: 76, close: 84, vol: 3000 },
+        { open: 84, high: 95, low: 82, close: 93, vol: 4200 },
+        { open: 93, high: 106, low: 91, close: 104, vol: 5800 }, // 旗桿
+        { open: 104, high: 107, low: 99, close: 101, vol: 2200 },
+        { open: 101, high: 105, low: 98, close: 103, vol: 2000 }, // 旗面
+        { open: 103, high: 106, low: 98, close: 100, vol: 1900 },
+        { open: 100, high: 105, low: 98, close: 103, vol: 2100 },
+        { open: 103, high: 116, low: 101, close: 114, vol: 5200 }, // 突破
+        { open: 114, high: 126, low: 112, close: 124, vol: 5600 },
+    ],
+    bearFlag: [
+        { open: 122, high: 124, low: 114, close: 116, vol: 3000 },
+        { open: 116, high: 118, low: 107, close: 108, vol: 4200 },
+        { open: 108, high: 110, low: 97,  close: 98,  vol: 5800 }, // 旗桿
+        { open: 98,  high: 104, low: 97,  close: 102, vol: 2200 },
+        { open: 102, high: 105, low: 98,  close: 100, vol: 2000 }, // 旗面
+        { open: 100, high: 104, low: 97,  close: 102, vol: 1900 },
+        { open: 102, high: 104, low: 97,  close: 99,  vol: 2100 },
+        { open: 99,  high: 100, low: 87,  close: 88,  vol: 5200 }, // 跌破
+        { open: 88,  high: 90,  low: 76,  close: 77,  vol: 5600 },
+    ],
+    risingWedge: [
+        { open: 90,  high: 100, low: 88,  close: 97  },
+        { open: 97,  high: 108, low: 96,  close: 104 },
+        { open: 104, high: 113, low: 103, close: 109 },
+        { open: 109, high: 116, low: 108, close: 113 },
+        { open: 113, high: 118, low: 112, close: 115 },
+        { open: 115, high: 119, low: 114, close: 116 }, // 收斂
+        { open: 116, high: 119, low: 113, close: 114 },
+        { open: 114, high: 115, low: 106, close: 108 }, // 跌破
+        { open: 108, high: 110, low: 97,  close: 99  },
+    ],
+    fallingWedge: [
+        { open: 120, high: 122, low: 110, close: 112 },
+        { open: 112, high: 114, low: 103, close: 106 },
+        { open: 106, high: 108, low: 98,  close: 101 },
+        { open: 101, high: 104, low: 95,  close: 97  },
+        { open: 97,  high: 100, low: 93,  close: 95  },
+        { open: 95,  high: 98,  low: 92,  close: 93  }, // 收斂
+        { open: 93,  high: 97,  low: 91,  close: 93  },
+        { open: 93,  high: 104, low: 91,  close: 103 }, // 突破
+        { open: 103, high: 114, low: 101, close: 112 },
+    ],
+    symTriangle: [
+        { open: 100, high: 118, low: 84,  close: 113 },
+        { open: 113, high: 116, low: 89,  close: 91  },
+        { open: 91,  high: 114, low: 89,  close: 110 },
+        { open: 110, high: 112, low: 93,  close: 95  },
+        { open: 95,  high: 110, low: 94,  close: 107 },
+        { open: 107, high: 109, low: 96,  close: 98  }, // 收斂
+        { open: 98,  high: 107, low: 97,  close: 105 },
+        { open: 105, high: 107, low: 98,  close: 100 },
+        { open: 100, high: 114, low: 99,  close: 112 }, // 向上突破
+        { open: 112, high: 122, low: 110, close: 120 },
+    ],
+    ascTriangle: [
+        { open: 95,  high: 112, low: 92,  close: 109 },
+        { open: 109, high: 113, low: 99,  close: 101 }, // 碰到阻力約112
+        { open: 101, high: 113, low: 100, close: 110 },
+        { open: 110, high: 113, low: 103, close: 105 },
+        { open: 105, high: 113, low: 104, close: 110 },
+        { open: 110, high: 113, low: 106, close: 108 },
+        { open: 108, high: 114, low: 107, close: 112 },
+        { open: 112, high: 122, low: 110, close: 120 }, // 突破！
+        { open: 120, high: 129, low: 118, close: 127 },
+    ],
+    descTriangle: [
+        { open: 115, high: 128, low: 97,  close: 99  },
+        { open: 99,  high: 118, low: 97,  close: 116 }, // 碰到支撐約97
+        { open: 116, high: 118, low: 97,  close: 99  },
+        { open: 99,  high: 114, low: 97,  close: 112 },
+        { open: 112, high: 114, low: 97,  close: 99  },
+        { open: 99,  high: 110, low: 97,  close: 108 },
+        { open: 108, high: 110, low: 96,  close: 98  }, // 逼近支撐
+        { open: 98,  high: 99,  low: 85,  close: 87  }, // 跌破！
+        { open: 87,  high: 89,  low: 76,  close: 78  },
+    ],
+    fibData: [
+        { open: 80,  high: 85,  low: 78,  close: 83  },
+        { open: 83,  high: 93,  low: 81,  close: 91  },
+        { open: 91,  high: 103, low: 89,  close: 101 },
+        { open: 101, high: 115, low: 99,  close: 113 },
+        { open: 113, high: 128, low: 111, close: 126 }, // 頂部
+        { open: 126, high: 129, low: 115, close: 117 }, // 回撤開始
+        { open: 117, high: 121, low: 108, close: 111 }, // ~38.2% 附近
+        { open: 111, high: 115, low: 104, close: 107 },
+        { open: 107, high: 113, low: 103, close: 109 }, // ~50% 撐住
+        { open: 109, high: 120, low: 107, close: 118 }, // 回升
+    ],
+    multiMAData:  genCandles(333, 40, 100, 0.4, 2.0),
+    obvData:      genCandles(444, 25, 100, 0.3, 2.5),
+    convergData1: genCandles(551, 28,  80, 2.5, 0.5), // RSI 共振
+    convergData2: genCandles(552, 50, 100, 0.6, 1.8), // MACD 共振
+    stopLossData: genCandles(666, 12, 100, 0.6, 2.0),
+    taiexCandles: [
+        { open: 100, high: 100, low: 100, close: 100, vol: 5000 }, // 漲停
+        { open: 100, high: 110, low: 98,  close: 110, vol: 8000 }, // 漲停
+        { open: 110, high: 110, low: 102, close: 104, vol: 4000 }, // 開高走低
+        { open: 104, high: 108, low: 97,  close: 97,  vol: 6000 }, // 跌停
+        { open: 97,  high: 103, low: 94,  close: 101, vol: 5000 }, // 除權後反彈
+    ],
 };
 
 // ── 教學內容（14 課）─────────────────────────────────────
@@ -630,10 +787,172 @@ const lessons = [
             <strong>量縮價跌</strong>：跌勢趨緩，可能接近底部
             </div></div>`,
         charts: [{ id: 'l14-vol', candles: _D.volData, height: 260, opts: { volume: true } }]
+    },
+    // ─── 進階型態 ─────────────────────────────────────────
+    {
+        title: '第 15 課：旗形與楔形',
+        content: `<div class="lesson">
+            <h3>上升旗形（Bull Flag）</h3>
+            <p>急速拉升（旗桿）後出現小幅整理（旗面），量縮後再放量突破 → <strong style="color:#ef5350;">強勢延續看漲</strong></p>
+            <div id="l15-bf" class="kline-chart-example"></div>
+            <h3>下降旗形（Bear Flag）</h3>
+            <p>急速下跌後小幅反彈整理，再次放量跌破 → <strong style="color:#26a69a;">強勢延續看跌</strong></p>
+            <div id="l15-bearf" class="kline-chart-example"></div>
+            <h3>上升楔形（Rising Wedge）</h3>
+            <p>上漲但漲幅收窄，高低點都在上升但逐漸靠近 → <strong style="color:#26a69a;">頂部看跌信號</strong></p>
+            <div id="l15-rw" class="kline-chart-example"></div>
+            <h3>下降楔形（Falling Wedge）</h3>
+            <p>下跌但跌幅收窄，突破上軌 → <strong style="color:#ef5350;">底部看漲信號</strong></p>
+            <div id="l15-fw" class="kline-chart-example"></div></div>`,
+        charts: [
+            { id: 'l15-bf',   candles: _D.bullFlag,    height: 190 },
+            { id: 'l15-bearf',candles: _D.bearFlag,    height: 190 },
+            { id: 'l15-rw',   candles: _D.risingWedge, height: 190 },
+            { id: 'l15-fw',   candles: _D.fallingWedge,height: 190 },
+        ]
+    },
+    {
+        title: '第 16 課：三角收斂形態',
+        content: `<div class="lesson">
+            <h3>對稱三角（Symmetrical Triangle）</h3>
+            <p>高點逐漸降低、低點逐漸升高，形成收斂。方向不確定，待突破方向操作。</p>
+            <div id="l16-sym" class="kline-chart-example"></div>
+            <h3>上升三角（Ascending Triangle）</h3>
+            <p>上方阻力水平，下方支撐逐步上移 → 偏向<strong style="color:#ef5350;">向上突破</strong></p>
+            <div id="l16-asc" class="kline-chart-example"></div>
+            <h3>下降三角（Descending Triangle）</h3>
+            <p>下方支撐水平，上方壓力逐步下移 → 偏向<strong style="color:#26a69a;">向下跌破</strong></p>
+            <div id="l16-desc" class="kline-chart-example"></div></div>`,
+        charts: [
+            { id: 'l16-sym',  candles: _D.symTriangle,  height: 200 },
+            { id: 'l16-asc',  candles: _D.ascTriangle,  height: 200 },
+            { id: 'l16-desc', candles: _D.descTriangle, height: 200 },
+        ]
+    },
+    {
+        title: '第 17 課：斐波那契回撤',
+        content: `<div class="lesson">
+            <h3>什麼是斐波那契回撤？</h3>
+            <p>利用黃金比例（0.618）衍生的價位，作為預測回撤後支撐/阻力的參考。</p>
+            <div class="lesson-example">
+            <strong style="color:#ef535099;">38.2%</strong>：淺度回撤，趨勢強勁<br>
+            <strong style="color:#ef535099;">50%</strong>：中度回撤，最常見支撐<br>
+            <strong style="color:#ff980099;">61.8%</strong>：深度回撤（黃金比例），若守住則趨勢延續<br>
+            <strong>超過 78.6%</strong>：可能已反轉
+            </div>
+            <div id="l17-fib" class="kline-chart-example"></div></div>`,
+        charts: [{ id: 'l17-fib', candles: _D.fibData, height: 240, opts: { fibonacci: true } }]
+    },
+    {
+        title: '第 18 課：OBV 能量潮',
+        content: `<div class="lesson">
+            <h3>OBV 的概念</h3>
+            <p>OBV（On Balance Volume）用成交量的累積方向來判斷資金流向。</p>
+            <div class="lesson-example">
+            上漲日：OBV <strong style="color:#ef5350;">+ 成交量</strong><br>
+            下跌日：OBV <strong style="color:#26a69a;">− 成交量</strong>
+            </div>
+            <div id="l18-obv" class="kline-chart-example"></div>
+            <h3>OBV 的應用</h3>
+            <div class="lesson-example">
+            OBV <strong style="color:#ef5350;">先於價格</strong>創新高 → 上漲動能強，看漲<br>
+            OBV 無法跟上價格 → <strong style="color:#26a69a;">背離</strong>，趨勢可能減弱
+            </div></div>`,
+        charts: [{ id: 'l18-obv', candles: _D.obvData, height: 280, opts: { volume: true, subChart: 'OBV' } }]
+    },
+    {
+        title: '第 19 課：均線多頭與空頭排列',
+        content: `<div class="lesson">
+            <h3>均線的顏色說明</h3>
+            <div class="lesson-example">
+            <strong style="color:#ffd700;">MA5（金）</strong> — 週線<br>
+            <strong style="color:#ff9800;">MA10（橙）</strong> — 雙週線<br>
+            <strong style="color:#00bcd4;">MA20（藍）</strong> — 月線<br>
+            <strong style="color:#ab47bc;">MA60（紫）</strong> — 季線
+            </div>
+            <div id="l19-mma" class="kline-chart-example"></div>
+            <h3>多頭排列 vs 空頭排列</h3>
+            <div class="lesson-example">
+            <strong style="color:#ef5350;">多頭排列</strong>：MA5 &gt; MA10 &gt; MA20 &gt; MA60，趨勢向上<br>
+            <strong style="color:#26a69a;">空頭排列</strong>：MA5 &lt; MA10 &lt; MA20 &lt; MA60，趨勢向下<br>
+            均線發散 → 趨勢強；均線收斂 → 趨勢轉換
+            </div></div>`,
+        charts: [{ id: 'l19-mma', candles: _D.multiMAData, height: 230, opts: { ma: [5, 10, 20, 60] } }]
+    },
+    {
+        title: '第 20 課：多指標共振',
+        content: `<div class="lesson">
+            <h3>什麼是多指標共振？</h3>
+            <p>同一個買賣點，多個指標同時給出相同方向的信號，可信度大幅提高。</p>
+            <h3>共振買入條件示例</h3>
+            <div class="lesson-example">
+            ✅ K線出現看漲形態（錘子線、吞噬）<br>
+            ✅ RSI 從超賣區（&lt;30）向上反彈<br>
+            ✅ MACD 黃金交叉（柱狀圖由負轉正）<br>
+            ✅ 成交量放大確認
+            </div>
+            <p><strong>RSI 共振示例（強勢回升）：</strong></p>
+            <div id="l20-rsi" class="kline-chart-example"></div>
+            <p><strong>MACD 共振示例（黃金交叉）：</strong></p>
+            <div id="l20-macd" class="kline-chart-example"></div></div>`,
+        charts: [
+            { id: 'l20-rsi',  candles: _D.convergData1, height: 270, opts: { subChart: 'RSI' } },
+            { id: 'l20-macd', candles: _D.convergData2, height: 280, opts: { subChart: 'MACD' } },
+        ]
+    },
+    {
+        title: '第 21 課：止損止盈設置',
+        content: `<div class="lesson">
+            <h3>為什麼要設止損？</h3>
+            <p>保護資金是第一原則。每筆交易都可能虧損，止損確保虧損可控。</p>
+            <h3>風報比（Risk-Reward Ratio）</h3>
+            <div class="lesson-example">
+            建議最低 <strong>1:2</strong>（虧 1 塊，目標賺 2 塊）<br>
+            即使勝率 50%，長期依然盈利
+            </div>
+            <div id="l21-sl" class="kline-chart-example"></div>
+            <h3>常見止損方法</h3>
+            <div class="lesson-example">
+            <strong>關鍵支撐止損</strong>：跌破前期低點下方 1-2%<br>
+            <strong>固定比例止損</strong>：進場價 × 3–5%<br>
+            <strong>ATR 止損</strong>：依照近期波動幅度設置
+            </div></div>`,
+        charts: [{
+            id: 'l21-sl', candles: _D.stopLossData, height: 220,
+            opts: { levels: [
+                { price: 107, label: '進場', color: '#ffd700' },
+                { price: 101, label: '止損 -5.6%', color: '#ef5350' },
+                { price: 119, label: '止盈 +11.2%', color: '#26a69a' },
+            ]}
+        }]
+    },
+    {
+        title: '第 22 課：台股特殊情況',
+        content: `<div class="lesson">
+            <h3>漲跌停板制度</h3>
+            <div class="lesson-example">
+            台股每日漲跌幅限制 <strong>±10%</strong><br>
+            漲停板（+10%）：大量買盤，但需注意隔日是否打開<br>
+            跌停板（−10%）：大量賣盤，流動性極差，難以脫手
+            </div>
+            <div id="l22-taiex" class="kline-chart-example"></div>
+            <h3>除權息對K線的影響</h3>
+            <div class="lesson-example">
+            除息日：開盤價 = 前收盤 − 股息<br>
+            除權日：開盤價按換股比例調整<br>
+            K線會出現<strong>跳空缺口</strong>，但屬技術性調整，非真實跌勢
+            </div>
+            <h3>台指期貨基礎</h3>
+            <div class="lesson-example">
+            台指期（TX）：追蹤加權指數，可做多做空<br>
+            到期日：每月第三個星期三<br>
+            保證金制度：槓桿操作，虧損風險放大
+            </div></div>`,
+        charts: [{ id: 'l22-taiex', candles: _D.taiexCandles, height: 190 }]
     }
 ];
 
-// ── 測驗題庫（30 題）─────────────────────────────────────
+// ── 測驗題庫（38 題）─────────────────────────────────────
 const quizBank = [
     // 基礎 10 題
     { type: 'basic', title: '基礎判讀 #1',
@@ -781,6 +1100,51 @@ const quizBank = [
       candles: _D.quizVol2, opts: { volume: true },
       question: '關於量價關係，下列何者最正確？',
       options: [{ text: '量縮時必定要買入', correct: false }, { text: '量縮價漲不如量增價漲健康，需謹慎', correct: true }, { text: '量越小，漲幅越大', correct: false }, { text: '成交量不重要，只看K線', correct: false }] },
+
+    // 進階型態 8 題
+    { type: 'pattern', title: '旗形識別 #1',
+      candles: _D.bullFlag, opts: { volume: true },
+      question: '急漲後出現量縮橫盤整理，接著再度放量上攻，這是什麼形態？',
+      options: [{ text: '下降旗形，看跌', correct: false }, { text: '上升旗形（Bull Flag），強勢延續看漲', correct: true }, { text: '頭肩頂，看跌反轉', correct: false }, { text: '對稱三角，方向不明', correct: false }] },
+
+    { type: 'pattern', title: '楔形識別 #1',
+      candles: _D.risingWedge,
+      question: '這個形態高點低點都在上升，但逐漸收斂，最後跌破，這是什麼？',
+      options: [{ text: '下降楔形，看漲', correct: false }, { text: '上升旗形，看漲', correct: false }, { text: '上升楔形，看跌反轉信號', correct: true }, { text: '對稱三角，待突破', correct: false }] },
+
+    { type: 'pattern', title: '三角識別 #1',
+      candles: _D.ascTriangle,
+      question: '上方阻力水平不動，下方支撐逐步上移，最後向上突破，這是什麼形態？',
+      options: [{ text: '下降三角，看跌', correct: false }, { text: '上升三角，偏向向上突破', correct: true }, { text: '對稱三角，方向不明', correct: false }, { text: '雙重頂，看跌', correct: false }] },
+
+    { type: 'indicator', title: '斐波那契 #1',
+      candles: _D.fibData, opts: { fibonacci: true },
+      question: '圖中顯示斐波那契回撤，在哪個位置通常是最強的支撐參考？',
+      options: [{ text: '23.6%（淺回撤）', correct: false }, { text: '61.8%（黃金比例）', correct: true }, { text: '100%（完全回撤）', correct: false }, { text: '斐波那契無實際意義', correct: false }] },
+
+    { type: 'indicator', title: 'OBV 判讀 #1',
+      candles: _D.obvData, opts: { volume: true, subChart: 'OBV' },
+      question: 'OBV（能量潮）持續走高代表什麼？',
+      options: [{ text: '成交量在縮小', correct: false }, { text: '資金持續流入，看漲', correct: true }, { text: 'OBV 高就應該賣出', correct: false }, { text: 'OBV 與趨勢無關', correct: false }] },
+
+    { type: 'indicator', title: '均線排列 #1',
+      candles: _D.multiMAData, opts: { ma: [5, 10, 20, 60] },
+      question: '當 MA5 > MA10 > MA20 > MA60，均線向上發散，這代表什麼？',
+      options: [{ text: '空頭排列，應做空', correct: false }, { text: '多頭排列，趨勢向上強勁', correct: true }, { text: '均線排列無意義', correct: false }, { text: '均線過多，訊號混亂', correct: false }] },
+
+    { type: 'concept', title: '止損止盈 #1',
+      candles: _D.stopLossData, opts: { levels: [
+          { price: 107, label: '進場', color: '#ffd700' },
+          { price: 101, label: '止損', color: '#ef5350' },
+          { price: 119, label: '止盈', color: '#26a69a' },
+      ]},
+      question: '進場在 107，止損設在 101，止盈設在 119，這個交易的風報比（R:R）大約是多少？',
+      options: [{ text: '1:1（風報比太低）', correct: false }, { text: '1:2（止盈是止損距離的 2 倍）', correct: true }, { text: '2:1（風大於報）', correct: false }, { text: '無法計算', correct: false }] },
+
+    { type: 'concept', title: '多指標共振 #1',
+      candles: _D.convergData1, opts: { subChart: 'RSI' },
+      question: '同時出現：K線錘子線 + RSI 從低位反彈 + MACD 黃金交叉，這代表什麼？',
+      options: [{ text: '訊號太多，互相矛盾', correct: false }, { text: '多指標共振，買入信號可信度高', correct: true }, { text: '只需要一個指標即可', correct: false }, { text: '共振代表即將下跌', correct: false }] },
 ];
 
 // ── 頁面導航 ─────────────────────────────────────────────
